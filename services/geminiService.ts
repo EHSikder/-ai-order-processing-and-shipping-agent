@@ -13,36 +13,62 @@ const getAiClient = () => {
 
 const model = 'gemini-2.5-flash';
 
-// --- Inventory Database (MOCK DATA) ---
-// [DEVELOPER NOTE]: This is a placeholder database. 
-// To connect a real DB, see the instructions in checkInventory_simulated below.
-
-export const INVENTORY_DATABASE: InventoryItem[] = [
+// --- Dynamic Inventory Database ---
+let activeInventory: InventoryItem[] = [
+  // Default template data
   { id: '1', name: 'Sonic Screwdriver', price: 950.00, stock: 15 },
   { id: '2', name: 'Flux Capacitor', price: 4500.00, stock: 3 },
   { id: '3', name: 'Lightsaber', price: 12000.00, stock: 0 },
-  { id: '4', name: 'Portal Gun', price: 5000.00, stock: 5 },
-  { id: '5', name: 'Replicator', price: 25000.00, stock: 2 },
-  { id: '6', name: 'Tardis Key', price: 50.00, stock: 100 },
-  { id: '7', name: 'Neuralyzer', price: 120.00, stock: 42 },
-  { id: '8', name: 'Plumbus', price: 49.99, stock: 999 },
-  { id: '9', name: 'Hoverboard', price: 600.00, stock: 8 }
 ];
+
+export const updateInventoryDatabase = (newItems: InventoryItem[]) => {
+  activeInventory = newItems;
+  console.log("Inventory updated:", activeInventory);
+};
+
+export const getCurrentInventory = () => activeInventory;
 
 // --- Simulated Backend Functions ---
 
-// [DEVELOPER INTEGRATION POINT]
-// Replace the logic inside this function to query your real database or API.
 const checkInventory_simulated = (itemQuery: string, quantity: number): InventoryStatus => {
   console.log(`DATABASE: Checking inventory for ${quantity} of "${itemQuery}"`);
   
-  // --- START: Mock Logic (Replace this block) ---
-  const normalizedQuery = itemQuery.toLowerCase();
-  
-  // Simple fuzzy matching: find item where name includes the query or query includes the name
-  const foundItem = INVENTORY_DATABASE.find(dbItem => {
-      const normalizedDbName = dbItem.name.toLowerCase();
-      return normalizedDbName.includes(normalizedQuery) || normalizedQuery.includes(normalizedDbName);
+  // Normalize text: lowercase, remove punctuation, trim
+  const normalize = (str: string) => str.toLowerCase().replace(/[^\w\s]/g, '').trim();
+  // Helper to remove trailing 's' (singularize)
+  const getSingular = (str: string) => str.endsWith('s') ? str.slice(0, -1) : str;
+
+  const normalizedQuery = normalize(itemQuery);
+  // Tokenize and singularize query words
+  const queryTokens = normalizedQuery.split(/\s+/).map(getSingular);
+
+  // Robust Fuzzy Matching
+  const foundItem = activeInventory.find(dbItem => {
+      const normalizedDbName = normalize(dbItem.name);
+      const dbTokens = normalizedDbName.split(/\s+/).map(getSingular);
+
+      // 1. Check exact string matches (singular vs plural whole strings)
+      const querySingular = getSingular(normalizedQuery);
+      const dbNameSingular = getSingular(normalizedDbName);
+
+      if (normalizedDbName.includes(normalizedQuery) || normalizedQuery.includes(normalizedDbName)) return true;
+      if (dbNameSingular.includes(querySingular) || querySingular.includes(dbNameSingular)) return true;
+
+      // 2. Token-based overlap
+      // If all significant words in the query exist in the DB item (or vice-versa)
+      // Example: "Sonic Screwdrivers" (tokens: sonic, screwdriver) matches "Sonic Screwdriver" (tokens: sonic, screwdriver)
+      
+      // Determine which token set is the 'subset' candidate (usually the shorter one)
+      const sourceTokens = queryTokens.length <= dbTokens.length ? queryTokens : dbTokens;
+      const targetTokens = queryTokens.length <= dbTokens.length ? dbTokens : queryTokens;
+
+      // Check if every token in the source exists in the target
+      // We use 'some' for target tokens to allow for partial string matches within tokens if necessary
+      const allTokensMatch = sourceTokens.every(sToken => 
+          targetTokens.some(tToken => tToken === sToken || tToken.includes(sToken) || sToken.includes(tToken))
+      );
+
+      return allTokensMatch;
   });
 
   if (!foundItem) {
@@ -59,7 +85,6 @@ const checkInventory_simulated = (itemQuery: string, quantity: number): Inventor
       stockRemaining: foundItem.stock,
       detectedItemName: foundItem.name
   }; 
-  // --- END: Mock Logic ---
 };
 
 const processShipping_simulated = async (
@@ -105,7 +130,7 @@ const processShipping_simulated = async (
 
 const checkInventoryTool: FunctionDeclaration = {
   name: 'checkInventory',
-  description: 'Checks if a given quantity of an item is available in the inventory database and returns its price.',
+  description: 'Checks if a given quantity of an item is available in the inventory database and returns its price. The item argument should be the clean product name extracted from the user request.',
   parameters: {
     type: Type.OBJECT,
     properties: {
@@ -178,10 +203,9 @@ export const checkInventory = async (item: string, quantity: number): Promise<In
 
     const functionCall = response.functionCalls?.[0];
     if (functionCall?.name === 'checkInventory') {
-        const args = functionCall.args as any; // Cast to any to safely access properties if types are loose
+        const args = functionCall.args as any;
         return checkInventory_simulated(args.item, args.quantity);
     }
-    // Fallback if model answers directly or fails to call tool
     throw new Error("AI failed to call the inventory check function.");
 };
 

@@ -10,6 +10,12 @@ export enum ProcessStep {
   ERROR = 'ERROR'
 }
 
+export enum AppView {
+  AUTH = 'AUTH',
+  UPLOAD = 'UPLOAD',
+  DASHBOARD = 'DASHBOARD'
+}
+
 export interface OrderDetails {
   item: string;
   quantity: number;
