@@ -1,0 +1,5 @@
+{
+  "name": "AI Order & Shipping Agent",
+  "description": "An AI-powered agent that processes and simulates shipping for user orders by extracting details, checking inventory, calculating costs, and generating tracking information.",
+  "requestFramePermissions": []
+}
